@@ -29,11 +29,12 @@ apt-get install -y nodejs
 # Claude Code
 npm install -g @anthropic-ai/claude-code
 
-# SSH config
-mkdir -p /run/sshd
-sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-echo "root:sandbox" | chpasswd
+# SSH config — key-based auth only (host key injected by sandbox-create)
+mkdir -p /run/sshd /root/.ssh
+chmod 700 /root/.ssh
+sed -i 's/#PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+passwd -l root
 
 # Enable services
 systemctl enable docker

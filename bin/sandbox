@@ -50,7 +50,8 @@ build_session_cmd() {
       echo "${exec_prefix} incus exec ${container} -- bash -c 'cd ${WORKSPACE_DIR} 2>/dev/null; claude --dangerously-skip-permissions'"
       ;;
     cmd)
-      echo "${exec_prefix} incus exec ${container} -- bash -c '${CMD}'"
+      local escaped_cmd="${CMD//\'/\'\\\'\'}"
+      echo "${exec_prefix} incus exec ${container} -- bash -c '${escaped_cmd}'"
       ;;
   esac
 }
@@ -69,7 +70,7 @@ done
 
 # ── Single container: direct session ────────────────────────────────
 if [[ ${#NAMES[@]} -eq 1 ]]; then
-  exec $(build_session_cmd "${NAMES[0]}")
+  eval "exec $(build_session_cmd "${NAMES[0]}")"
 fi
 
 # ── Multiple containers: tmux ───────────────────────────────────────

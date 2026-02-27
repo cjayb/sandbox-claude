@@ -468,9 +468,9 @@ cleanup_container_domain_filter() {
 redirect_container_to_squid() {
   local container_ip="$1"
   vm_exec "
-    iptables -t nat -A PREROUTING -s ${container_ip}/32 -p tcp --dport 443 \
+    iptables -t nat -A PREROUTING -s '${container_ip}/32' -p tcp --dport 443 \
       -j REDIRECT --to-port ${SQUID_PORT}
-    iptables -t nat -A PREROUTING -s ${container_ip}/32 -p tcp --dport 80 \
+    iptables -t nat -A PREROUTING -s '${container_ip}/32' -p tcp --dport 80 \
       -j REDIRECT --to-port ${SQUID_PORT}
   "
 }

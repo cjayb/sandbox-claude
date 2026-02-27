@@ -46,7 +46,7 @@ add_port() {
 
   # Outbound: container → external
   vm_exec "
-    iptables -I FORWARD -s ${CONTAINER_IP} -o ${OUTBOUND_IFACE} -p ${p} --dport ${PORT} -j ACCEPT
+    iptables -I FORWARD -s '${CONTAINER_IP}' -o '${OUTBOUND_IFACE}' -p ${p} --dport ${PORT} -j ACCEPT
   "
 }
 
