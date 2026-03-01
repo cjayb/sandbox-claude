@@ -99,6 +99,7 @@ Golden images (shared across both platforms):
   +-- golden-node/ready     (base + Node.js 22, npm, pnpm, yarn, bun, eslint, etc.)
   +-- golden-go/ready       (base + Go, golangci-lint, govulncheck)
   +-- golden-dotnet/ready   (base + .NET SDK, dotnet tools)
+  +-- golden-unison/ready   (base + Unison UCM with built-in LSP + MCP)
 
 Agent containers (instant btrfs copy-on-write clones):
   +-- agent-proj-alpha      (clone of golden-rust)
@@ -491,6 +492,7 @@ Golden images are pre-built container snapshots with all tooling installed. Crea
 | **node** | `golden-node` | Everything in base + Node.js 22 LTS, npm, pnpm, yarn, bun | c8 (V8-native coverage), eslint (linting), prettier (formatting) |
 | **go** | `golden-go` | Everything in base + Go latest stable | golangci-lint (meta-linter), govulncheck (security), `go tool cover` (built-in coverage) |
 | **dotnet** | `golden-dotnet` | Everything in base + .NET SDK (latest LTS) | dotnet-coverage (coverage), `dotnet format` (built-in formatting), dotnet-sonarscanner (quality analysis), security analyzers via NuGet |
+| **unison** | `golden-unison` | Everything in base + Unison Codebase Manager (UCM) via apt | Built-in LSP (port 5757: autocomplete, type errors, format on save, hover types), built-in MCP server (`ucm mcp`: code inspection, typechecking, Share search) |
 
 ### Adding a Custom Stack
 
@@ -627,7 +629,7 @@ The bundled `anthropic-default.txt` includes domains for:
 | Version control | GitHub, GitLab, Bitbucket |
 | Container registries | Docker Hub, GCR, GHCR, ECR, MCR |
 | Cloud platforms | AWS, GCP, Azure, Oracle |
-| Package managers | npm, PyPI, RubyGems, crates.io, Go proxy, Maven, NuGet, Hex, pub.dev, CocoaPods, CPAN, Hackage |
+| Package managers | npm, PyPI, RubyGems, crates.io, Go proxy, Maven, NuGet, Hex, pub.dev, CocoaPods, CPAN, Hackage, Unison Share |
 | Linux repos | Ubuntu archives, Launchpad PPAs |
 | Dev tools | Kubernetes, HashiCorp, Anaconda, Apache, Eclipse, Node.js |
 | Monitoring | Sentry, Datadog, Statsig |

@@ -175,6 +175,13 @@ hackage.haskell.org
 # Swift
 swift.org
 www.swift.org
+# Unison
+unison-lang.org
+www.unison-lang.org
+share.unison-lang.org
+debian.unison-lang.org
+unison.cloud
+www.unison.cloud
 
 # ── Linux Distributions ──────────────────────────────────────────
 archive.ubuntu.com
