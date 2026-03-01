@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# sandbox-nuke [--all]
-# Destroy ALL agent containers. Pass --all to also remove golden images.
+# sandbox-nuke
+# Destroy ALL agent containers and golden images.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/../lib/sandbox-common.sh"
 
-FLAG="${1:-}"
-
 require_sandbox
 
-echo "This will destroy ALL agent containers and their deploy keys."
+echo "This will destroy ALL agent containers, golden images, and deploy keys."
 read -p "Are you sure? (yes/no): " CONFIRM
 [[ "$CONFIRM" == "yes" ]] || { echo "Aborted"; exit 0; }
 
@@ -47,18 +45,14 @@ for container in $CONTAINERS; do
   vm_exec "incus delete '${container}' --force"
 done
 
-if [[ "$FLAG" == "--all" ]]; then
-  info "Destroying golden images..."
-  vm_exec "
-    for g in \$(incus list -f csv -c n 2>/dev/null | grep '^golden-'); do
-      echo \"Destroying \$g...\"
-      incus delete \"\$g\" --force
-    done
-  "
-  ok "Everything destroyed. Run 'sandbox-setup' to rebuild."
-else
-  ok "All agent containers destroyed. Golden images preserved."
-fi
+info "Destroying golden images..."
+vm_exec "
+  for g in \$(incus list -f csv -c n 2>/dev/null | grep '^golden-'); do
+    echo \"Destroying \$g...\"
+    incus delete \"\$g\" --force
+  done
+"
+ok "Everything destroyed. Run 'sandbox-setup' to rebuild."
 
 # Clean up any remaining local keys
 if [[ -d "${SANDBOX_KEY_DIR}" ]]; then

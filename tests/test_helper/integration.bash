@@ -20,7 +20,7 @@ create_test_container() {
   suite=$(_test_suite_name)
   TEST_CONTAINER_NAME="${TEST_CONTAINER_PREFIX}-${suite}"
 
-  "${PROJECT_ROOT}/bin/sandbox-create" "$TEST_CONTAINER_NAME" --stack base "$@"
+  "${PROJECT_ROOT}/bin/sandbox-start" "$TEST_CONTAINER_NAME" --stack base "$@"
 
   # Wait for networking to be ready (container just started)
   local attempts=0

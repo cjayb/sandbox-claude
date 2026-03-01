@@ -272,6 +272,20 @@ ssh_agent_cleanup() {
   " 2>/dev/null || true
 }
 
+ssh_agent_restart() {
+  local container="$1"
+  if ! vm_exec "incus exec ${container} -- test -f ${SANDBOX_USER_HOME}/.ssh/deploy-key" 2>/dev/null; then
+    info "No deploy key found in ${container}, skipping SSH agent restart"
+    return 0
+  fi
+  vm_exec "incus exec ${container} -- bash -c '
+    eval \$(ssh-agent -a /run/ssh-agent.sock)
+    echo \$SSH_AGENT_PID > /run/ssh-agent.pid
+    chmod 777 /run/ssh-agent.sock
+    ssh-add ${SANDBOX_USER_HOME}/.ssh/deploy-key
+  '"
+}
+
 # ── Env forwarding ─────────────────────────────────────────────────
 inject_env() {
   local container="$1"

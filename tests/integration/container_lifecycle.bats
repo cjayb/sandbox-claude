@@ -19,9 +19,9 @@ teardown_file() {
 
 _name() { cat "$(_lifecycle_name_file)"; }
 
-@test "sandbox-create: creates a container successfully" {
+@test "sandbox-start: creates a container successfully" {
   local LIFECYCLE_NAME; LIFECYCLE_NAME=$(_name)
-  run "${PROJECT_ROOT}/bin/sandbox-create" "$LIFECYCLE_NAME" --stack base
+  run "${PROJECT_ROOT}/bin/sandbox-start" "$LIFECYCLE_NAME" --stack base
   assert_success
   assert_output --partial "ready"
 }
@@ -70,6 +70,34 @@ _name() { cat "$(_lifecycle_name_file)"; }
   assert_success
   assert_output --partial "agent-${LIFECYCLE_NAME}"
   assert_output --partial "STOPPED"
+}
+
+@test "sandbox-start: restarts a stopped container" {
+  local LIFECYCLE_NAME; LIFECYCLE_NAME=$(_name)
+  run "${PROJECT_ROOT}/bin/sandbox-start" "$LIFECYCLE_NAME"
+  assert_success
+  assert_output --partial "restarted"
+}
+
+@test "container is Running after restart" {
+  local LIFECYCLE_NAME; LIFECYCLE_NAME=$(_name)
+  run vm_exec "incus info agent-${LIFECYCLE_NAME} 2>/dev/null | grep 'Status:' | awk '{print \$2}'"
+  assert_success
+  assert_output "RUNNING"
+}
+
+@test "can execute a command after restart" {
+  local LIFECYCLE_NAME; LIFECYCLE_NAME=$(_name)
+  run vm_run incus exec "agent-${LIFECYCLE_NAME}" -- echo "hello after restart"
+  assert_success
+  assert_output "hello after restart"
+}
+
+@test "sandbox-stop: stops the container again after restart" {
+  local LIFECYCLE_NAME; LIFECYCLE_NAME=$(_name)
+  run "${PROJECT_ROOT}/bin/sandbox-stop" "$LIFECYCLE_NAME"
+  assert_success
+  assert_output --partial "Stopped"
 }
 
 @test "sandbox-stop --rm: removes the container entirely" {

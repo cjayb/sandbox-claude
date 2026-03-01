@@ -16,6 +16,9 @@ for script in "${SCRIPT_DIR}"/sandbox*; do
   fi
 done
 
+# Clean up renamed commands from previous installs
+rm -f "${DEST}/sandbox-create" 2>/dev/null || true
+
 echo "Installing sandbox commands to ${DEST}..."
 echo ""
 

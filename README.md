@@ -47,7 +47,7 @@ sandbox-setup               # Takes ~10 minutes the first time
 
 ```bash
 # 3. Create a sandbox for your project
-sandbox-create my-project git@github.com:me/my-repo.git --stack rust
+sandbox-start my-project git@github.com:me/my-repo.git --stack rust
 
 # 4. Open a shell to verify everything
 sandbox my-project
@@ -57,6 +57,7 @@ sandbox my-project --claude
 
 # 6. When done, stop or destroy
 sandbox-stop my-project       # Stop (preserves container, can restart)
+sandbox-start my-project      # Restart a stopped container
 sandbox-stop my-project --rm  # Destroy (removes container + deploy key)
 ```
 
@@ -66,9 +67,7 @@ sandbox-stop my-project --rm  # Destroy (removes container + deploy key)
 - [Platform Support](#platform-support)
 - [Prerequisites](#prerequisites)
 - [Commands Reference](#commands-reference)
-- [GitHub Deploy Keys](#github-deploy-keys)
 - [Stacks](#stacks)
-- [Port Allocation](#port-allocation)
 - [Configuration](#configuration)
   - [Environment Variables](#environment-variables)
   - [Domain-Based Egress Filtering](#domain-based-egress-filtering)
@@ -117,6 +116,18 @@ macOS (2 hops):
 Linux (1 hop):
   Incus container → Incus proxy device → Linux host localhost
 ```
+
+### Port Allocation
+
+Each container is assigned a **slot** (1-99), auto-assigned or set with `--slot`:
+
+| Port Type | Formula | Range | Maps to container port |
+|---|---|---|---|
+| **SSH** | 2200 + slot | 2201-2299 | 22 |
+| **App** | 8000 + slot | 8001-8099 | 8080 |
+| **Alt** | 9000 + slot | 9001-9099 | 9090 |
+
+For example, slot 3 → SSH `localhost:2203`, App `localhost:8003`, Alt `localhost:9003`. Use [`sandbox-expose`](#sandbox-expose) to open additional ports (mapped 1:1, bidirectional).
 
 Golden images are btrfs snapshots. Creating a new container is an instant copy-on-write clone -- no reinstalling packages, no waiting.
 
@@ -173,12 +184,12 @@ Run `sudo sandbox-linux-prereqs` to install everything in this table automatical
 |---|---|
 | `sandbox-linux-prereqs` | Linux only: install system packages and configure group membership before `sandbox-setup` |
 | `sandbox-setup` | One-time: create VM (macOS) or install directly (Linux), set up Incus, build golden images, apply egress rules |
-| `sandbox-create` | Create a new agent container from a golden image |
+| `sandbox-start` | Create a new container or restart a stopped one |
 | `sandbox` | Session entry point: shell, Claude, or arbitrary command |
 | `sandbox-list` | List all containers with health status |
 | `sandbox-expose` | Expose additional ports bidirectionally |
 | `sandbox-stop` | Stop and optionally remove a container |
-| `sandbox-nuke` | Destroy all agent containers (nuclear option) |
+| `sandbox-nuke` | Destroy all containers and golden images (nuclear option) |
 
 ---
 
@@ -234,12 +245,12 @@ sandbox-setup --rebuild all
 
 ---
 
-### sandbox-create
+### sandbox-start
 
-Create a new agent container.
+Create a new agent container, or restart a stopped one.
 
 ```
-sandbox-create <name> [repo-url] [flags]
+sandbox-start <name> [repo-url] [flags]
 ```
 
 | Flag | Description | Default |
@@ -273,32 +284,42 @@ sandbox-create <name> [repo-url] [flags]
 
 ```bash
 # Minimal -- just a scratch container
-sandbox-create scratch
+sandbox-start scratch
 
 # Typical usage -- project with a specific stack
-sandbox-create proj-alpha git@github.com:me/alpha.git --stack rust
+sandbox-start proj-alpha git@github.com:me/alpha.git --stack rust
 
 # Branch from an existing container (inherits repo URL and stack)
-sandbox-create proj-alpha-hotfix --from proj-alpha --branch hotfix/auth-fix
+sandbox-start proj-alpha-hotfix --from proj-alpha --branch hotfix/auth-fix
 
 # Custom resources for a heavy build
-sandbox-create big-build git@github.com:me/monorepo.git --stack node --cpu 8 --memory 16GiB
+sandbox-start big-build git@github.com:me/monorepo.git --stack node --cpu 8 --memory 16GiB
 
 # Manual SSH key (for repos where deploy keys can't be used)
-sandbox-create proj git@github.com:me/repo.git --ssh-key ~/.ssh/my_key
+sandbox-start proj git@github.com:me/repo.git --ssh-key ~/.ssh/my_key
 
 # Extra env vars
-sandbox-create proj git@github.com:me/repo.git --env DB_HOST=localhost --env DB_PORT=5432
+sandbox-start proj git@github.com:me/repo.git --env DB_HOST=localhost --env DB_PORT=5432
 
-# Restrict HTTPS egress to default allowlist (Anthropic's Claude Code web domains)
-sandbox-create proj git@github.com:me/repo.git --restrict-domains
-
-# Restrict HTTPS egress to a custom allowlist
-sandbox-create proj git@github.com:me/repo.git --domains-file ~/my-domains.txt
-
-# Domain restriction is inherited with --from
-sandbox-create proj-hotfix --from proj --branch hotfix/auth
+# Restrict HTTPS egress (see Domain-Based Egress Filtering)
+sandbox-start proj git@github.com:me/repo.git --restrict-domains
 ```
+
+#### Restart Behavior
+
+When called with the name of a **stopped** container, `sandbox-start` restarts it in-place -- re-applying transient state (SSH agent, domain filtering, iptables rules) from preserved metadata. The container filesystem, Incus config, proxy devices, and deploy keys on disk are all preserved across stop/start cycles.
+
+```bash
+# Bare restart (re-applies SSH agent + domain filtering from saved config)
+sandbox-start my-project
+
+# Reconfigure on restart (update resource limits, add env vars)
+sandbox-start my-project --cpu 4 --memory 8GiB --env NEW_VAR=value
+```
+
+**Flags that can be changed on restart** (reconfigurable): `--cpu`, `--memory`, `--env`, `--ssh-key`, `--restrict-domains`, `--domains-file`.
+
+**Flags that require a fresh container** (immutable on restart): `--stack`, `--from`, `--repo`, `--branch`, `--slot`. Using these on a stopped container will produce an error; destroy and recreate instead.
 
 ---
 
@@ -420,7 +441,7 @@ sandbox-stop <name> [--rm]
 **Without `--rm`:**
 - Stops the container
 - Kills the ssh-agent
-- Deploy key stays on GitHub (container can be restarted later)
+- Deploy key stays on GitHub (container can be restarted with `sandbox-start <name>`)
 
 **With `--rm`:**
 - Stops the container
@@ -441,73 +462,20 @@ sandbox-stop proj-alpha --rm
 
 ### sandbox-nuke
 
-Destroy all agent containers. Requires interactive confirmation.
+Destroy all agent containers and golden images. Requires interactive confirmation.
 
 ```
-sandbox-nuke [--all]
+sandbox-nuke
 ```
 
-| Flag | Description |
-|---|---|
-| `--all` | Also destroy golden images (requires re-running `sandbox-setup`) |
-
-**Without `--all`:** Destroys all `agent-*` containers, cleans up their deploy keys and ssh-agents. Golden images are preserved.
-
-**With `--all`:** Also destroys golden images. Full reset -- run `sandbox-setup` again to rebuild.
+Destroys all `agent-*` containers, cleans up their deploy keys and ssh-agents, and destroys golden images. Full reset -- run `sandbox-setup` again to rebuild.
 
 Prompts for confirmation by typing `yes`.
 
 ```bash
-# Remove all agent containers, keep golden images
-sandbox-nuke
-
 # Full nuclear reset -- everything gone
-sandbox-nuke --all
+sandbox-nuke
 ```
-
-## GitHub Deploy Keys
-
-### Automatic Lifecycle
-
-When you create a container with a repo URL (and no `--ssh-key` flag), the deploy key lifecycle is fully automated:
-
-**On `sandbox-create`:**
-
-1. Generates an ed25519 key pair at `~/.sandbox/keys/deploy_<name>`
-2. Registers the public key on GitHub via `gh repo deploy-key add -R <org/repo> -t "sandbox-<name>" -w` (the `-w` flag grants write/push access)
-3. Spawns a dedicated ssh-agent process in the sandbox environment (OrbStack VM on macOS, host on Linux) with its socket at `/tmp/sandbox-agent-<container>.sock`
-4. Adds the private key to the agent via `ssh-add`
-5. Mounts the agent socket into the container as an Incus disk device at `/run/ssh-agent.sock`
-6. Sets `SSH_AUTH_SOCK=/run/ssh-agent.sock` in the container's `/root/.bashrc`
-
-**On `sandbox-stop`:**
-
-- Kills the ssh-agent and removes the socket
-- The deploy key remains on GitHub so the container can be restarted
-
-**On `sandbox-stop --rm`:**
-
-- Kills the ssh-agent and removes the socket
-- Removes the deploy key from GitHub via `gh repo deploy-key delete`
-- Deletes the local key pair from `~/.sandbox/keys/`
-
-### Security Properties
-
-- Private key material never touches the container's disk -- it lives only in the ssh-agent's memory
-- Each deploy key is scoped to a single repository (enforced by GitHub)
-- Each container has its own ssh-agent process -- containers cannot see each other's keys
-- Deploy keys have write access (`-w` flag) so Claude can push commits
-- Keys are automatically cleaned up from GitHub when a container is destroyed with `--rm`
-
-### Manual Key Override
-
-For repos where deploy keys cannot be used (org policy restrictions, monorepo setups, etc.):
-
-```bash
-sandbox-create proj git@github.com:me/repo.git --ssh-key ~/.ssh/my_key
-```
-
-This skips the `gh` automation entirely and uses the provided key directly. The key is loaded into a dedicated ssh-agent the same way, but no deploy key is registered on GitHub, and no cleanup is performed on `--rm`.
 
 ## Stacks
 
@@ -566,41 +534,7 @@ sandbox-setup --rebuild elixir
 4. Use it:
 
 ```bash
-sandbox-create my-elixir-app git@github.com:me/app.git --stack elixir
-```
-
-## Port Allocation
-
-Each container is assigned a **slot** (1-99). Slots are auto-assigned by default (lowest available) or manually specified with `--slot`.
-
-### Slot-Based Port Scheme
-
-| Port Type | Formula | Range | Purpose |
-|---|---|---|---|
-| **SSH** | 2200 + slot | 2201-2299 | SSH access to container |
-| **App** | 8000 + slot | 8001-8099 | Primary application port (maps to container port 8080) |
-| **Alt** | 9000 + slot | 9001-9099 | Secondary application port (maps to container port 9090) |
-
-For example, a container in slot 3 gets:
-
-- SSH: `localhost:2203`
-- App: `localhost:8003` (maps to container `127.0.0.1:8080`)
-- Alt: `localhost:9003` (maps to container `127.0.0.1:9090`)
-
-### Extra Ports
-
-Use `sandbox-expose` to open additional ports beyond the standard three. Extra ports are mapped 1:1 (host port = container port) and also open outbound access for that port.
-
-```bash
-# Open PostgreSQL port
-sandbox-expose proj-alpha 5432
-
-# Open Redis port
-sandbox-expose proj-alpha 6379
-
-# Both show up in sandbox-list under the EXTRA column
-sandbox-list
-# ... EXTRA: 5432,6379
+sandbox-start my-elixir-app git@github.com:me/app.git --stack elixir
 ```
 
 ## Configuration
@@ -618,14 +552,14 @@ GITHUB_TOKEN=ghp_...
 MY_CUSTOM_VAR=some-value
 ```
 
-This file is read by `sandbox-create` and injected into each container's `/root/.bashrc`. Variables persist across container restarts.
+This file is read by `sandbox-start` and injected into each container's `/root/.bashrc`. Variables persist across container restarts.
 
 #### Per-Container Overrides with `--env`
 
 Add or override environment variables for a specific container:
 
 ```bash
-sandbox-create proj git@github.com:me/repo.git \
+sandbox-start proj git@github.com:me/repo.git \
   --env DATABASE_URL=postgres://localhost/mydb \
   --env REDIS_URL=redis://localhost:6379
 ```
@@ -657,39 +591,7 @@ The `~/.sandbox/` directory (including `env` and `keys/`) lives outside the repo
 
 ### Domain-Based Egress Filtering
 
-By default, containers can reach any HTTPS endpoint. Use `--restrict-domains` to limit HTTPS egress to an approved domain allowlist, matching the security model Anthropic uses for Claude Code web containers.
-
-#### How It Works
-
-When a container is created with `--restrict-domains`:
-
-1. **Squid proxy** (installed in the VM on macOS, on host on Linux, by `sandbox-setup`) receives the container's HTTPS/HTTP traffic via iptables NAT PREROUTING redirect
-2. Squid **peeks at the TLS ClientHello** to read the SNI (Server Name Indication) — the domain the client is connecting to
-3. Squid checks the SNI against the container's **per-container domain allowlist**
-4. **Allowed**: Squid splices the connection through (no decryption, no MITM, no CA cert needed)
-5. **Denied**: Squid resets the connection (TCP RST)
-6. **QUIC bypass** is prevented: UDP port 443 is blocked for restricted containers
-
-This is **not DNS filtering** — it inspects the actual TLS handshake, so it works regardless of how the IP was resolved (hardcoded IPs, CDN shared IPs, etc.).
-
-Unrestricted containers are completely unaffected — their traffic never touches Squid.
-
-#### Usage
-
-```bash
-# Use the bundled default allowlist (Anthropic's ~190 domains)
-sandbox-create my-project git@github.com:me/repo.git --restrict-domains
-
-# Use a custom allowlist
-sandbox-create my-project git@github.com:me/repo.git --domains-file ~/my-domains.txt
-
-# Check filtering status
-sandbox-list
-# EGRESS column shows "filtered" or "open"
-
-# Inherited when using --from
-sandbox-create my-hotfix --from my-project --branch hotfix/auth
-```
+By default, containers can reach any HTTPS endpoint. Use `--restrict-domains` to limit HTTPS egress to an approved domain allowlist (see [sandbox-start](#sandbox-start) flags). Uses Squid in SNI peek/splice mode — inspects the TLS ClientHello to read the target domain, then splices or rejects the connection. No decryption, no MITM, no CA cert needed. QUIC (UDP 443) is blocked for restricted containers. Unrestricted containers are unaffected — their traffic never touches Squid.
 
 #### Domain File Format
 
@@ -753,7 +655,7 @@ Or create a project-specific file and pass it with `--domains-file`.
 |---|---|
 | **Host filesystem** (macOS / Linux) | Agents run inside Incus containers (inside an OrbStack VM on macOS, directly on host on Linux). No host filesystem access whatsoever. |
 | **Per-container isolation** | Each container is a separate Incus system container with its own filesystem, process tree, and network namespace. At the network level, `security.port_isolation=true` on the default profile sets the kernel's `IFLA_BRPORT_ISOLATED` flag on each container's veth — containers can only communicate with the bridge gateway (for DNS/DHCP/NAT), not with each other. Combined with `security.ipv4_filtering` and `security.ipv6_filtering` for anti-spoofing. |
-| **SSH private keys** | Private keys live only in ssh-agent memory (inside the OrbStack VM on macOS, on the host on Linux). Key material never touches the container's disk. |
+| **SSH private keys** | Private keys live only in ssh-agent memory in the sandbox environment (VM on macOS, host on Linux). Key material never touches the container's disk. Each container has its own ssh-agent process — containers cannot see each other's keys. Keys are automatically cleaned up from GitHub when a container is destroyed with `--rm`. |
 | **Deploy key scoping** | Each deploy key is scoped to a single GitHub repository. A compromised container cannot access other repos. |
 | **Egress filtering** | Default iptables rules on `incusbr0` DROP all outbound traffic except DNS (53), HTTP (80), HTTPS (443), and SSH (22). Containers cannot reach arbitrary services unless explicitly opened with `sandbox-expose`. |
 | **Domain-based HTTPS filtering** | Containers created with `--restrict-domains` can only reach HTTPS endpoints on an approved domain allowlist. Uses Squid in SNI peek/splice mode (inspects TLS ClientHello, no decryption/MITM). QUIC (UDP 443) is blocked for restricted containers. Fail-closed: if Squid is down, traffic hits a closed port. |
@@ -790,7 +692,7 @@ sandbox proj-alpha --cmd "systemctl restart docker"
 
 # If the container was created without proper flags, recreate it
 sandbox-stop proj-alpha --rm
-sandbox-create proj-alpha git@github.com:me/alpha.git --stack rust
+sandbox-start proj-alpha git@github.com:me/alpha.git --stack rust
 ```
 
 #### Cannot Access Ports from Host
@@ -833,46 +735,26 @@ orb run -m sandbox btrfs filesystem usage /
 df -h
 btrfs filesystem usage /  # if using btrfs
 
-# Remove stopped containers to reclaim space
-sandbox-nuke
-
 # Nuclear option: destroy everything and rebuild
-sandbox-nuke --all
+sandbox-nuke
 sandbox-setup
 ```
 
 #### Resource Limits
 
-By default, containers share the VM's (macOS) or host's (Linux) resources without hard limits. If an agent is consuming too much:
+By default, containers share the VM's (macOS) or host's (Linux) resources without hard limits. Use `--cpu` and `--memory` to constrain a container:
 
 ```bash
 # Create with limits
-sandbox-create proj git@github.com:me/repo.git --cpu 4 --memory 8GiB
+sandbox-start proj git@github.com:me/repo.git --cpu 4 --memory 8GiB
 
-# Or set limits on an existing container (requires stop/start)
-# macOS:
-orb run -m sandbox incus config set agent-proj limits.cpu=4
-orb run -m sandbox incus config set agent-proj limits.memory=8GiB
-orb run -m sandbox incus restart agent-proj
-# Linux:
-incus config set agent-proj limits.cpu=4
-incus config set agent-proj limits.memory=8GiB
-incus restart agent-proj
+# Apply limits on restart
+sandbox-start proj --cpu 4 --memory 8GiB
 ```
 
 #### Rebuilding Golden Images
 
-If a golden image becomes stale (outdated packages, broken dependencies):
-
-```bash
-# Rebuild a specific stack
-sandbox-setup --rebuild rust
-
-# Rebuild everything (base + all variants)
-sandbox-setup --rebuild all
-```
-
-Existing containers are NOT affected by golden image rebuilds. Only new containers created after the rebuild will use the updated image.
+Use `sandbox-setup --rebuild <stack>` (or `--rebuild all`). See [sandbox-setup](#sandbox-setup) for details. Existing containers are not affected — only new containers use the updated image.
 
 #### Deploy Key Issues
 
@@ -890,10 +772,10 @@ gh repo deploy-key list -R me/alpha
 
 # 4. If the key was removed manually from GitHub, recreate the container
 sandbox-stop proj-alpha --rm
-sandbox-create proj-alpha git@github.com:me/alpha.git --stack rust
+sandbox-start proj-alpha git@github.com:me/alpha.git --stack rust
 ```
 
-**Symptom:** `sandbox-create` fails with "Failed to add deploy key".
+**Symptom:** `sandbox-start` fails with "Failed to add deploy key".
 
 - Verify you have admin access on the target repo
 - Verify `gh auth status` shows a valid session
@@ -979,7 +861,7 @@ sandbox-claude/
 |   +-- sandbox              # Session entry (shell/claude/cmd, auto-tmux)
 |   +-- sandbox-linux-prereqs  # Linux only: install prereqs (iptables, gh, etc.)
 |   +-- sandbox-setup        # One-time: OrbStack VM + Incus + golden images + egress
-|   +-- sandbox-create       # Create container
+|   +-- sandbox-start       # Create or restart container
 |   +-- sandbox-stop         # Stop/remove container
 |   +-- sandbox-nuke         # Destroy all containers
 |   +-- sandbox-list         # List containers with health

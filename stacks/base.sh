@@ -34,7 +34,7 @@ su - ubuntu -c 'curl -fsSL https://claude.ai/install.sh | bash'
 # Ensure claude is on PATH for non-interactive shells (incus exec)
 ln -sf /home/ubuntu/.local/bin/claude /usr/local/bin/claude
 
-# SSH config — key-based auth only (host key injected by sandbox-create)
+# SSH config — key-based auth only (host key injected by sandbox-start)
 mkdir -p /run/sshd /root/.ssh /home/ubuntu/.ssh
 chmod 700 /root/.ssh /home/ubuntu/.ssh
 chown ubuntu:ubuntu /home/ubuntu/.ssh

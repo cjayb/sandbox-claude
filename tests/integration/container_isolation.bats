@@ -15,8 +15,8 @@ setup_file() {
   echo "$CONTAINER_B_NAME" > "$(_name_b_file)"
 
   # Create two containers
-  "${PROJECT_ROOT}/bin/sandbox-create" "$CONTAINER_A_NAME" --stack base
-  "${PROJECT_ROOT}/bin/sandbox-create" "$CONTAINER_B_NAME" --stack base
+  "${PROJECT_ROOT}/bin/sandbox-start" "$CONTAINER_A_NAME" --stack base
+  "${PROJECT_ROOT}/bin/sandbox-start" "$CONTAINER_B_NAME" --stack base
 
   # Wait for container B networking to be ready
   local attempts=0
