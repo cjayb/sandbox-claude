@@ -95,7 +95,7 @@ Linux path:
 Golden images (shared across both platforms):
   +-- golden-base/ready     (Docker, Claude Code, SSH, git, Python 3)
   +-- golden-rust/ready     (base + Rust toolchain + quality tools)
-  +-- golden-python/ready   (base + Poetry, uv, ruff, mypy, etc.)
+  +-- golden-python/ready   (base + uv, ruff, ty, etc.)
   +-- golden-node/ready     (base + Node.js 22, npm, pnpm, yarn, bun, eslint, etc.)
   +-- golden-go/ready       (base + Go, golangci-lint, govulncheck)
   +-- golden-dotnet/ready   (base + .NET SDK, dotnet tools)
@@ -494,7 +494,7 @@ Golden images are pre-built container snapshots with all tooling installed. Crea
 |---|---|---|---|
 | **base** | `golden-base` | Docker CE + docker-compose-plugin, Claude Code (native binary), Python 3 + pip + venv, git, tmux, openssh-server, ripgrep, jq, htop, wget, unzip, build-essential, ca-certificates | -- |
 | **rust** | `golden-rust` | Everything in base + Rust stable toolchain via rustup | clippy (linting), rustfmt (formatting), cargo-tarpaulin (coverage), cargo-audit (security) |
-| **python** | `golden-python` | Everything in base + Poetry, uv | ruff (linting + formatting), mypy (type checking), bandit (security), coverage (code coverage) |
+| **python** | `golden-python` | Everything in base + uv | ruff (linting + formatting), ty (type checking), bandit (security), coverage (code coverage) |
 | **node** | `golden-node` | Everything in base + Node.js 22 LTS, npm, pnpm, yarn, bun | c8 (V8-native coverage), eslint (linting), prettier (formatting) |
 | **go** | `golden-go` | Everything in base + Go latest stable | golangci-lint (meta-linter), govulncheck (security), `go tool cover` (built-in coverage) |
 | **dotnet** | `golden-dotnet` | Everything in base + .NET SDK (latest LTS) | dotnet-coverage (coverage), `dotnet format` (built-in formatting), dotnet-sonarscanner (quality analysis), security analyzers via NuGet |
