@@ -294,7 +294,7 @@ if [[ "$COPY_AZURE" == "yes" ]]; then
   [[ -d "$HOST_AZURE_DIR" ]] || die "${HOST_AZURE_DIR} not found. Run 'az login' on the host first."
   warn "Copying host ${HOST_AZURE_DIR} into container (excluding logs) — tokens won't sync back; recreate to refresh."
   vm_exec "incus exec ${CONTAINER} -- bash -c 'rm -rf ${SANDBOX_USER_HOME}/.azure && install -d -o ${SANDBOX_UID} -g ${SANDBOX_GID} ${SANDBOX_USER_HOME}/.azure'"
-  tar -C "$HOST_AZURE_DIR" \
+  COPYFILE_DISABLE=1 tar -C "$HOST_AZURE_DIR" \
       --exclude='logs' --exclude='*.log' \
       --exclude='bin' --exclude='cliextensions' --exclude='commands' \
       --exclude='telemetry' --exclude='ms-*' \
