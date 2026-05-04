@@ -13,4 +13,7 @@ su - ubuntu -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 # installed via uv tool — each gets an isolated venv, executables on ubuntu's PATH
 su - ubuntu -c 'for pkg in ruff ty bandit coverage; do uv tool install "$pkg"; done'
 
+# Azure CLI — needed for Foundry/AAD-based Claude Code authentication
+curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
 echo "Python stack complete"

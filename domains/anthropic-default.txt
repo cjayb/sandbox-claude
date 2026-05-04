@@ -56,7 +56,10 @@ azure.com
 portal.azure.com
 microsoft.com
 www.microsoft.com
+login.microsoft.com
 .microsoftonline.com
+management.azure.com
+.services.ai.azure.com
 packages.microsoft.com
 dotnet.microsoft.com
 dot.net
