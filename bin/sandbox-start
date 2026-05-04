@@ -18,6 +18,7 @@ EXTRA_ENVS=()
 RESTRICT_DOMAINS=""
 DOMAINS_FILE=""
 COPY_AZURE=""
+COPY_CLAUDE=""
 
 # ── Helpers ──────────────────────────────────────────────────────
 apply_domain_filtering() {
@@ -60,6 +61,9 @@ print_connection_summary() {
   if [[ "$(get_metadata "$container" "copy-azure")" == "yes" ]]; then
     echo "  Azure:     host ~/.azure copied at create time (no sync back)"
   fi
+  if [[ "$(get_metadata "$container" "copy-claude")" == "yes" ]]; then
+    echo "  Claude:    host ~/.claude config (CLAUDE.md, skills, commands) seeded at create time"
+  fi
   echo "  SSH:       ssh -o StrictHostKeyChecking=no -p ${ssh_p} ubuntu@localhost"
   echo "  VS Code:   code --remote ssh-remote+ubuntu@localhost:${ssh_p} ${WORKSPACE_DIR}"
   echo "  App:       http://localhost:${app_p}"
@@ -82,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --restrict-domains) RESTRICT_DOMAINS="yes"; shift ;;
     --domains-file)     [[ -n "${2:-}" ]] || die "--domains-file requires a value"; RESTRICT_DOMAINS="yes"; DOMAINS_FILE="$2"; shift 2 ;;
     --copy-azure)       COPY_AZURE="yes"; shift ;;
+    --copy-claude)      COPY_CLAUDE="yes"; shift ;;
     --*)                die "Unknown flag: $1" ;;
     *)
       if [[ -z "$NAME" ]]; then
@@ -123,6 +128,7 @@ if [[ "$CONTAINER_STATE" == "STOPPED" ]]; then
   [[ -n "$BRANCH" ]]       && IMMUTABLE_ERROR+="  --branch (cannot change branch on restart)\n"
   [[ -n "$SLOT" ]]         && IMMUTABLE_ERROR+="  --slot (cannot change slot on restart)\n"
   [[ -n "$COPY_AZURE" ]]   && IMMUTABLE_ERROR+="  --copy-azure (only seeds tokens at create time; recreate to refresh)\n"
+  [[ -n "$COPY_CLAUDE" ]]  && IMMUTABLE_ERROR+="  --copy-claude (only seeds config at create time; recreate to refresh)\n"
   if [[ -n "$IMMUTABLE_ERROR" ]]; then
     die "Cannot change these flags on restart (destroy and recreate instead):\n${IMMUTABLE_ERROR}Use 'sandbox-stop ${NAME} --rm' first, then 'sandbox-start ${NAME} ...' to recreate."
   fi
@@ -303,6 +309,23 @@ if [[ "$COPY_AZURE" == "yes" ]]; then
         tar -C "${SANDBOX_USER_HOME}/.azure" -xf -
 fi
 
+# Seed Claude Code config (CLAUDE.md, skills/, commands/) from the host.
+# Snapshot at create time — host edits won't sync. Recreate to refresh.
+if [[ "$COPY_CLAUDE" == "yes" ]]; then
+  HOST_CLAUDE_DIR="${HOME}/.claude"
+  [[ -d "$HOST_CLAUDE_DIR" ]] || die "${HOST_CLAUDE_DIR} not found."
+  CLAUDE_ITEMS=()
+  for item in CLAUDE.md skills commands; do
+    [[ -e "${HOST_CLAUDE_DIR}/${item}" ]] && CLAUDE_ITEMS+=("$item")
+  done
+  [[ ${#CLAUDE_ITEMS[@]} -gt 0 ]] || die "No Claude config items found in ${HOST_CLAUDE_DIR} (expected CLAUDE.md, skills, or commands)."
+  warn "Copying Claude config from ${HOST_CLAUDE_DIR} (${CLAUDE_ITEMS[*]}) into container — won't sync back; recreate to refresh."
+  vm_exec "incus exec ${CONTAINER} -- bash -c 'install -d -o ${SANDBOX_UID} -g ${SANDBOX_GID} ${SANDBOX_USER_HOME}/.claude'"
+  COPYFILE_DISABLE=1 tar -C "$HOST_CLAUDE_DIR" -h -cf - "${CLAUDE_ITEMS[@]}" \
+    | vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
+        tar -C "${SANDBOX_USER_HOME}/.claude" -xf -
+fi
+
 # ── Host SSH key (for user SSH access) ────────────────────────────
 HOST_PUBKEY=""
 for keyfile in ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub ~/.ssh/id_ecdsa.pub; do
@@ -347,6 +370,7 @@ if [[ "$RESTRICT_DOMAINS" == "yes" ]]; then
   [[ -n "$DOMAINS_FILE" ]] && set_metadata "$CONTAINER" "domains-file" "$DOMAINS_FILE"
 fi
 [[ "$COPY_AZURE" == "yes" ]] && set_metadata "$CONTAINER" "copy-azure" "yes"
+[[ "$COPY_CLAUDE" == "yes" ]] && set_metadata "$CONTAINER" "copy-claude" "yes"
 
 # ── Clone repo ──────────────────────────────────────────────────────
 if [[ -n "$REPO" ]]; then
