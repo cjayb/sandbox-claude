@@ -311,6 +311,8 @@ sandbox-start <name> [repo-url] [flags]
 
 **Repo resolution.** If you don't pass `[repo-url]` explicitly, `sandbox-start` falls back to `git remote get-url origin` in the **current working directory** and uses that. So `cd ~/code/myrepo && sandbox-start myrepo --stack python` is equivalent to passing the GitHub URL by hand. To opt out (e.g. you want a true scratch container while sitting inside a git repo), pass `--no-repo`.
 
+**HTTPS → SSH rewrite.** GitHub `https://github.com/owner/repo[.git]` URLs are rewritten to `git@github.com:owner/repo.git` before cloning, so the auto-generated deploy key is actually used. (HTTPS clones bypass ssh-agent and would prompt for credentials.) This applies to both auto-detected and explicitly-passed URLs.
+
 **Steps performed:**
 
 1. Validates the golden image exists for the chosen stack
