@@ -301,6 +301,7 @@ if [[ "$COPY_AZURE" == "yes" ]]; then
   warn "Copying host ${HOST_AZURE_DIR} into container (excluding logs) — tokens won't sync back; recreate to refresh."
   vm_exec "incus exec ${CONTAINER} -- bash -c 'rm -rf ${SANDBOX_USER_HOME}/.azure && install -d -o ${SANDBOX_UID} -g ${SANDBOX_GID} ${SANDBOX_USER_HOME}/.azure'"
   COPYFILE_DISABLE=1 tar -C "$HOST_AZURE_DIR" \
+      --no-mac-metadata --no-xattrs --no-acls --no-fflags \
       --exclude='logs' --exclude='*.log' \
       --exclude='bin' --exclude='cliextensions' --exclude='commands' \
       --exclude='telemetry' --exclude='ms-*' \
@@ -321,7 +322,9 @@ if [[ "$COPY_CLAUDE" == "yes" ]]; then
   [[ ${#CLAUDE_ITEMS[@]} -gt 0 ]] || die "No Claude config items found in ${HOST_CLAUDE_DIR} (expected CLAUDE.md, skills, or commands)."
   warn "Copying Claude config from ${HOST_CLAUDE_DIR} (${CLAUDE_ITEMS[*]}) into container — won't sync back; recreate to refresh."
   vm_exec "incus exec ${CONTAINER} -- bash -c 'install -d -o ${SANDBOX_UID} -g ${SANDBOX_GID} ${SANDBOX_USER_HOME}/.claude'"
-  COPYFILE_DISABLE=1 tar -C "$HOST_CLAUDE_DIR" -h -cf - "${CLAUDE_ITEMS[@]}" \
+  COPYFILE_DISABLE=1 tar -C "$HOST_CLAUDE_DIR" \
+      --no-mac-metadata --no-xattrs --no-acls --no-fflags \
+      -h -cf - "${CLAUDE_ITEMS[@]}" \
     | vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
         tar -C "${SANDBOX_USER_HOME}/.claude" -xf -
 fi
