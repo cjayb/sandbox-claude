@@ -246,6 +246,14 @@ if [[ -z "$REPO" && -z "$FROM" && "$NO_REPO" != "yes" ]]; then
   fi
 fi
 
+# ── Normalize HTTPS GitHub URLs to SSH so the deploy key is usable ──
+# HTTPS clones bypass ssh-agent and would prompt for credentials.
+if [[ "$REPO" =~ ^https://github\.com/(.+)$ ]]; then
+  REPO_PATH="${BASH_REMATCH[1]%.git}"
+  REPO="git@github.com:${REPO_PATH}.git"
+  info "Rewrote HTTPS URL to SSH form: ${REPO}"
+fi
+
 # ── Validate ────────────────────────────────────────────────────────
 require_golden "$STACK"
 
