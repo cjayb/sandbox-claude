@@ -61,8 +61,48 @@ sandbox-start my-project      # Restart a stopped container
 sandbox-stop my-project --rm  # Destroy (removes container + deploy key)
 ```
 
+## Workflow: Getting Changes Back
+
+The container has its **own clone** of your repo at `/workspace/project`, on its own filesystem. Your host filesystem is never mounted in. So how do changes round-trip?
+
+**Answer: through git.** GitHub is the synchronization point — your host and the container share a remote, not a working tree.
+
+```
+┌────────────────────┐                         ┌────────────────────┐
+│   container        │                         │   host             │
+│ /workspace/project │ ── git push ──> GitHub  │  ~/code/myrepo     │
+│ (agent edits here) │                <─ git fetch ── (you review)  │
+└────────────────────┘                         └────────────────────┘
+```
+
+`sandbox-start` provisions push access automatically. It generates an ed25519 keypair, registers the public key as a **write-enabled deploy key** on the GitHub repo via `gh`, and loads the private key into a per-container ssh-agent (the key never touches the container's disk). Inside the container, `git push` just works.
+
+A typical loop:
+
+```bash
+# Container side (Claude does this, or you do via `sandbox <name>`)
+git -C /workspace/project commit -am "..."
+git -C /workspace/project push -u origin feat/x
+
+# Host side (your normal local clone)
+git fetch && git checkout feat/x      # review, run locally, open PR, merge
+```
+
+**For repos where deploy keys aren't an option** (org-restricted, or you want commits to push as *you*), pass `--ssh-key ~/.ssh/your_key` to `sandbox-start`. Same flow, different identity on the push.
+
+**For quick read-only peeks** without going through GitHub:
+
+```bash
+sandbox <name> --cmd "git -C /workspace/project diff"
+ssh -p $((2200+slot)) ubuntu@localhost                       # full shell
+code --remote ssh-remote+ubuntu@localhost:<ssh_port> /workspace/project
+```
+
+When you're done, `sandbox-stop <name> --rm` deletes the container, removes the deploy key from GitHub, and wipes the local keypair.
+
 ## Table of Contents
 
+- [Workflow: Getting Changes Back](#workflow-getting-changes-back)
 - [Architecture](#architecture)
 - [Platform Support](#platform-support)
 - [Prerequisites](#prerequisites)
