@@ -267,29 +267,37 @@ sandbox-start <name> [repo-url] [flags]
 | `--env KEY=VALUE` | Extra environment variable (repeatable) | -- |
 | `--restrict-domains` | Enable domain-based HTTPS egress filtering with default allowlist | Off (all HTTPS allowed) |
 | `--domains-file <path>` | Enable domain filtering with a custom allowlist file | Bundled `anthropic-default.txt` |
+| `--no-repo` | Skip CWD repo auto-detection and create a scratch container | Off |
+
+**Repo resolution.** If you don't pass `[repo-url]` explicitly, `sandbox-start` falls back to `git remote get-url origin` in the **current working directory** and uses that. So `cd ~/code/myrepo && sandbox-start myrepo --stack python` is equivalent to passing the GitHub URL by hand. To opt out (e.g. you want a true scratch container while sitting inside a git repo), pass `--no-repo`.
 
 **Steps performed:**
 
 1. Validates the golden image exists for the chosen stack
 2. Auto-assigns the next free slot (or validates a manually provided slot)
-3. If a repo URL is provided and `--ssh-key` is not set: auto-generates an ed25519 deploy key and registers it on GitHub via `gh`
-4. Clones the golden image snapshot (instant btrfs copy-on-write)
-5. Applies resource limits if `--cpu` or `--memory` are set
-6. Adds Incus proxy devices for SSH, App, and Alt ports
-7. Starts the container
-8. Sets up a dedicated ssh-agent in the sandbox environment (OrbStack VM on macOS, host on Linux) and mounts the socket into the container
-9. Injects environment variables from `~/.sandbox/env` and any `--env` overrides into `/etc/profile.d/sandbox-env.sh`
-10. If `--restrict-domains` is set: configures Squid SNI filtering, iptables NAT redirect, and QUIC blocking for this container
-11. Clones the repo into `/workspace/project` (with `--branch` if specified)
-12. Stores metadata (stack, repo, slot, restrict-domains) in Incus config for later retrieval
-13. Prints connection info
+3. If no repo URL was passed and `--no-repo` is not set, attempts to detect one from the CWD's `origin` remote
+4. If a repo URL is now in scope and `--ssh-key` is not set: auto-generates an ed25519 deploy key and registers it on GitHub via `gh`
+5. Clones the golden image snapshot (instant btrfs copy-on-write)
+6. Applies resource limits if `--cpu` or `--memory` are set
+7. Adds Incus proxy devices for SSH, App, and Alt ports
+8. Starts the container
+9. Sets up a dedicated ssh-agent in the sandbox environment (OrbStack VM on macOS, host on Linux) and mounts the socket into the container
+10. Injects environment variables from `~/.sandbox/env` and any `--env` overrides into `/etc/profile.d/sandbox-env.sh`
+11. If `--restrict-domains` is set: configures Squid SNI filtering, iptables NAT redirect, and QUIC blocking for this container
+12. Clones the repo into `/workspace/project` (with `--branch` if specified)
+13. Stores metadata (stack, repo, slot, restrict-domains) in Incus config for later retrieval
+14. Prints connection info
 
 ```bash
-# Minimal -- just a scratch container
+# Minimal -- just a scratch container (run from outside any git repo, or use --no-repo)
 sandbox-start scratch
+sandbox-start scratch --no-repo  # explicit, even if CWD is a git repo
 
 # Typical usage -- project with a specific stack
 sandbox-start proj-alpha git@github.com:me/alpha.git --stack rust
+
+# Equivalent: from inside ~/code/alpha (CWD repo auto-detected)
+sandbox-start proj-alpha --stack rust
 
 # Branch from an existing container (inherits repo URL and stack)
 sandbox-start proj-alpha-hotfix --from proj-alpha --branch hotfix/auth-fix

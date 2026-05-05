@@ -19,6 +19,7 @@ RESTRICT_DOMAINS=""
 DOMAINS_FILE=""
 COPY_AZURE=""
 COPY_CLAUDE=""
+NO_REPO=""
 
 # ── Helpers ──────────────────────────────────────────────────────
 apply_domain_filtering() {
@@ -87,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --domains-file)     [[ -n "${2:-}" ]] || die "--domains-file requires a value"; RESTRICT_DOMAINS="yes"; DOMAINS_FILE="$2"; shift 2 ;;
     --copy-azure)       COPY_AZURE="yes"; shift ;;
     --copy-claude)      COPY_CLAUDE="yes"; shift ;;
+    --no-repo)          NO_REPO="yes"; shift ;;
     --*)                die "Unknown flag: $1" ;;
     *)
       if [[ -z "$NAME" ]]; then
@@ -231,6 +233,16 @@ if [[ -n "$FROM" ]]; then
         fi
       fi
     fi
+  fi
+fi
+
+# ── Auto-detect repo from CWD if not explicitly provided ───────────
+if [[ -z "$REPO" && -z "$FROM" && "$NO_REPO" != "yes" ]]; then
+  CWD_REMOTE=$(git remote get-url origin 2>/dev/null || true)
+  if [[ -n "$CWD_REMOTE" ]]; then
+    REPO="$CWD_REMOTE"
+    info "Detected repo from current directory: ${REPO}"
+    info "(pass --no-repo to create a scratch container instead)"
   fi
 fi
 
