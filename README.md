@@ -308,6 +308,8 @@ sandbox-start <name> [repo-url] [flags]
 | `--restrict-domains` | Enable domain-based HTTPS egress filtering with default allowlist | Off (all HTTPS allowed) |
 | `--domains-file <path>` | Enable domain filtering with a custom allowlist file | Bundled `anthropic-default.txt` |
 | `--no-repo` | Skip CWD repo auto-detection and create a scratch container | Off |
+| `--copy-claude` | Seed the curated `profile/.claude/` from this repo into the container | Off |
+| `--copy-claude-host` | Seed the host's full `~/.claude/` into the container (legacy escape hatch) | Off |
 
 **Repo resolution.** If you don't pass `[repo-url]` explicitly, `sandbox-start` falls back to `git remote get-url origin` in the **current working directory** and uses that. So `cd ~/code/myrepo && sandbox-start myrepo --stack python` is equivalent to passing the GitHub URL by hand. To opt out (e.g. you want a true scratch container while sitting inside a git repo), pass `--no-repo`.
 
@@ -371,7 +373,16 @@ sandbox-start my-project --cpu 4 --memory 8GiB --env NEW_VAR=value
 
 **Flags that can be changed on restart** (reconfigurable): `--cpu`, `--memory`, `--env`, `--ssh-key`, `--restrict-domains`, `--domains-file`.
 
-**Flags that require a fresh container** (immutable on restart): `--stack`, `--from`, `--repo`, `--branch`, `--slot`. Using these on a stopped container will produce an error; destroy and recreate instead.
+**Flags that require a fresh container** (immutable on restart): `--stack`, `--from`, `--repo`, `--branch`, `--slot`, `--copy-claude`, `--copy-claude-host`. Using these on a stopped container will produce an error; destroy and recreate instead.
+
+#### Seeding Claude Code config (`--copy-claude` vs `--copy-claude-host`)
+
+Containers ship with Claude Code installed but no `CLAUDE.md`, skills, or commands. Two flags seed config at create time (snapshot, not sync — recreate the container to pick up edits):
+
+- `--copy-claude` (recommended) — copies the curated [`profile/.claude/`](profile/.claude/) from this repo. Hand-picked, container-aware: no host-only skills (cmux, etc.), no org-specific automation, no credentials. Edit `profile/.claude/` to evolve what every fresh sandbox sees.
+- `--copy-claude-host` — copies the entire host `~/.claude/` (CLAUDE.md, skills/, commands/). Escape hatch when you really want everything from your host config; brings along host-only items that may be useless or noisy inside a container.
+
+The container's own `~/.claude/` (auth tokens, etc.) persists across stop/start regardless of which flag was used at create time.
 
 ---
 
@@ -928,6 +939,8 @@ sandbox-claude/
 |   +-- anthropic-default.txt  # Default domain allowlist (~190 domains)
 +-- lib/
 |   +-- sandbox-common.sh    # Shared functions (slot mgmt, deploy keys, ssh-agent, env, domain filtering)
++-- profile/
+|   +-- .claude/              # Curated Claude config seeded by --copy-claude (CLAUDE.md, skills/, commands/)
 +-- stacks/
 |   +-- base.sh              # Core golden image
 |   +-- rust.sh              # Rust additions
