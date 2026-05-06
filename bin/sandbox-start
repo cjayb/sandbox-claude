@@ -19,6 +19,7 @@ RESTRICT_DOMAINS=""
 DOMAINS_FILE=""
 COPY_AZURE=""
 COPY_CLAUDE=""
+COPY_CLAUDE_SOURCE=""  # "profile" (curated repo profile) or "host" (~/.claude)
 NO_REPO=""
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -63,7 +64,13 @@ print_connection_summary() {
     echo "  Azure:     host ~/.azure copied at create time (no sync back)"
   fi
   if [[ "$(get_metadata "$container" "copy-claude")" == "yes" ]]; then
-    echo "  Claude:    host ~/.claude config (CLAUDE.md, skills, commands) seeded at create time"
+    local claude_src
+    claude_src=$(get_metadata "$container" "copy-claude-source")
+    if [[ "$claude_src" == "host" ]]; then
+      echo "  Claude:    host ~/.claude config seeded at create time (--copy-claude-host)"
+    else
+      echo "  Claude:    curated profile/.claude seeded at create time (--copy-claude)"
+    fi
   fi
   echo "  SSH:       ssh -o StrictHostKeyChecking=no -p ${ssh_p} ubuntu@localhost"
   echo "  VS Code:   code --remote ssh-remote+ubuntu@localhost:${ssh_p} ${WORKSPACE_DIR}"
@@ -87,7 +94,8 @@ while [[ $# -gt 0 ]]; do
     --restrict-domains) RESTRICT_DOMAINS="yes"; shift ;;
     --domains-file)     [[ -n "${2:-}" ]] || die "--domains-file requires a value"; RESTRICT_DOMAINS="yes"; DOMAINS_FILE="$2"; shift 2 ;;
     --copy-azure)       COPY_AZURE="yes"; shift ;;
-    --copy-claude)      COPY_CLAUDE="yes"; shift ;;
+    --copy-claude)      COPY_CLAUDE="yes"; COPY_CLAUDE_SOURCE="profile"; shift ;;
+    --copy-claude-host) COPY_CLAUDE="yes"; COPY_CLAUDE_SOURCE="host"; shift ;;
     --no-repo)          NO_REPO="yes"; shift ;;
     --*)                die "Unknown flag: $1" ;;
     *)
@@ -130,7 +138,7 @@ if [[ "$CONTAINER_STATE" == "STOPPED" ]]; then
   [[ -n "$BRANCH" ]]       && IMMUTABLE_ERROR+="  --branch (cannot change branch on restart)\n"
   [[ -n "$SLOT" ]]         && IMMUTABLE_ERROR+="  --slot (cannot change slot on restart)\n"
   [[ -n "$COPY_AZURE" ]]   && IMMUTABLE_ERROR+="  --copy-azure (only seeds tokens at create time; recreate to refresh)\n"
-  [[ -n "$COPY_CLAUDE" ]]  && IMMUTABLE_ERROR+="  --copy-claude (only seeds config at create time; recreate to refresh)\n"
+  [[ -n "$COPY_CLAUDE" ]]  && IMMUTABLE_ERROR+="  --copy-claude / --copy-claude-host (only seeds config at create time; recreate to refresh)\n"
   if [[ -n "$IMMUTABLE_ERROR" ]]; then
     die "Cannot change these flags on restart (destroy and recreate instead):\n${IMMUTABLE_ERROR}Use 'sandbox-stop ${NAME} --rm' first, then 'sandbox-start ${NAME} ...' to recreate."
   fi
@@ -330,19 +338,27 @@ if [[ "$COPY_AZURE" == "yes" ]]; then
         tar -C "${SANDBOX_USER_HOME}/.azure" -xf -
 fi
 
-# Seed Claude Code config (CLAUDE.md, skills/, commands/) from the host.
-# Snapshot at create time — host edits won't sync. Recreate to refresh.
+# Seed Claude Code config (CLAUDE.md, skills/, commands/).
+# Default source: curated profile/.claude in this repo (--copy-claude).
+# Escape hatch: full host ~/.claude (--copy-claude-host).
+# Snapshot at create time — edits won't sync. Recreate to refresh.
 if [[ "$COPY_CLAUDE" == "yes" ]]; then
-  HOST_CLAUDE_DIR="${HOME}/.claude"
-  [[ -d "$HOST_CLAUDE_DIR" ]] || die "${HOST_CLAUDE_DIR} not found."
+  if [[ "$COPY_CLAUDE_SOURCE" == "host" ]]; then
+    CLAUDE_SRC_DIR="${HOME}/.claude"
+    CLAUDE_SRC_LABEL="host ${CLAUDE_SRC_DIR}"
+  else
+    CLAUDE_SRC_DIR="$(cd "${SCRIPT_DIR}/../profile/.claude" 2>/dev/null && pwd)"
+    CLAUDE_SRC_LABEL="curated profile/.claude"
+  fi
+  [[ -n "$CLAUDE_SRC_DIR" && -d "$CLAUDE_SRC_DIR" ]] || die "Claude config source not found (${CLAUDE_SRC_LABEL})."
   CLAUDE_ITEMS=()
   for item in CLAUDE.md skills commands; do
-    [[ -e "${HOST_CLAUDE_DIR}/${item}" ]] && CLAUDE_ITEMS+=("$item")
+    [[ -e "${CLAUDE_SRC_DIR}/${item}" ]] && CLAUDE_ITEMS+=("$item")
   done
-  [[ ${#CLAUDE_ITEMS[@]} -gt 0 ]] || die "No Claude config items found in ${HOST_CLAUDE_DIR} (expected CLAUDE.md, skills, or commands)."
-  warn "Copying Claude config from ${HOST_CLAUDE_DIR} (${CLAUDE_ITEMS[*]}) into container — won't sync back; recreate to refresh."
+  [[ ${#CLAUDE_ITEMS[@]} -gt 0 ]] || die "No Claude config items found in ${CLAUDE_SRC_DIR} (expected CLAUDE.md, skills, or commands)."
+  warn "Copying Claude config from ${CLAUDE_SRC_LABEL} (${CLAUDE_ITEMS[*]}) into container — won't sync back; recreate to refresh."
   vm_exec "incus exec ${CONTAINER} -- bash -c 'install -d -o ${SANDBOX_UID} -g ${SANDBOX_GID} ${SANDBOX_USER_HOME}/.claude'"
-  COPYFILE_DISABLE=1 tar -C "$HOST_CLAUDE_DIR" \
+  COPYFILE_DISABLE=1 tar -C "$CLAUDE_SRC_DIR" \
       --no-mac-metadata --no-xattrs --no-acls --no-fflags \
       -h -cf - "${CLAUDE_ITEMS[@]}" \
     | vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
@@ -393,7 +409,10 @@ if [[ "$RESTRICT_DOMAINS" == "yes" ]]; then
   [[ -n "$DOMAINS_FILE" ]] && set_metadata "$CONTAINER" "domains-file" "$DOMAINS_FILE"
 fi
 [[ "$COPY_AZURE" == "yes" ]] && set_metadata "$CONTAINER" "copy-azure" "yes"
-[[ "$COPY_CLAUDE" == "yes" ]] && set_metadata "$CONTAINER" "copy-claude" "yes"
+if [[ "$COPY_CLAUDE" == "yes" ]]; then
+  set_metadata "$CONTAINER" "copy-claude" "yes"
+  set_metadata "$CONTAINER" "copy-claude-source" "$COPY_CLAUDE_SOURCE"
+fi
 
 # ── Clone repo ──────────────────────────────────────────────────────
 if [[ -n "$REPO" ]]; then
