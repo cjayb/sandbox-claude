@@ -21,6 +21,7 @@ COPY_AZURE=""
 COPY_CLAUDE=""
 COPY_CLAUDE_SOURCE=""  # "profile" (curated repo profile) or "host" (~/.claude)
 NO_REPO=""
+ISSUE=""
 
 # ── Helpers ──────────────────────────────────────────────────────
 apply_domain_filtering() {
@@ -72,6 +73,11 @@ print_connection_summary() {
       echo "  Claude:    curated profile/.claude seeded at create time (--copy-claude)"
     fi
   fi
+  local issue_meta
+  issue_meta=$(get_metadata "$container" "issue")
+  if [[ -n "$issue_meta" ]]; then
+    echo "  Issue:     ${issue_meta} (ISSUE.md seeded at workspace root)"
+  fi
   echo "  SSH:       ssh -o StrictHostKeyChecking=no -p ${ssh_p} ubuntu@localhost"
   echo "  VS Code:   code --remote ssh-remote+ubuntu@localhost:${ssh_p} ${WORKSPACE_DIR}"
   echo "  App:       http://localhost:${app_p}"
@@ -97,6 +103,7 @@ while [[ $# -gt 0 ]]; do
     --copy-claude)      COPY_CLAUDE="yes"; COPY_CLAUDE_SOURCE="profile"; shift ;;
     --copy-claude-host) COPY_CLAUDE="yes"; COPY_CLAUDE_SOURCE="host"; shift ;;
     --no-repo)          NO_REPO="yes"; shift ;;
+    --issue)            [[ -n "${2:-}" ]] || die "--issue requires a value"; ISSUE="$2"; shift 2 ;;
     --*)                die "Unknown flag: $1" ;;
     *)
       if [[ -z "$NAME" ]]; then
@@ -139,6 +146,7 @@ if [[ "$CONTAINER_STATE" == "STOPPED" ]]; then
   [[ -n "$SLOT" ]]         && IMMUTABLE_ERROR+="  --slot (cannot change slot on restart)\n"
   [[ -n "$COPY_AZURE" ]]   && IMMUTABLE_ERROR+="  --copy-azure (only seeds tokens at create time; recreate to refresh)\n"
   [[ -n "$COPY_CLAUDE" ]]  && IMMUTABLE_ERROR+="  --copy-claude / --copy-claude-host (only seeds config at create time; recreate to refresh)\n"
+  [[ -n "$ISSUE" ]]        && IMMUTABLE_ERROR+="  --issue (only seeds the issue at create time; recreate to refresh)\n"
   if [[ -n "$IMMUTABLE_ERROR" ]]; then
     die "Cannot change these flags on restart (destroy and recreate instead):\n${IMMUTABLE_ERROR}Use 'sandbox-stop ${NAME} --rm' first, then 'sandbox-start ${NAME} ...' to recreate."
   fi
@@ -200,6 +208,35 @@ if [[ "$CONTAINER_STATE" == "STOPPED" ]]; then
 fi
 
 # ── Container doesn't exist: create from scratch ──────────────────
+
+# ── Resolve --issue ────────────────────────────────────────────────
+# Resolved before container creation so a bad spec / unauth'd gh fails fast.
+ISSUE_NWO=""
+ISSUE_NUM=""
+ISSUE_TITLE=""
+ISSUE_URL=""
+ISSUE_BODY_FILE=""
+if [[ -n "$ISSUE" ]]; then
+  require_gh
+  read -r ISSUE_NWO ISSUE_NUM < <(parse_issue_spec "$ISSUE") || die "Failed to parse --issue value: '${ISSUE}'"
+  info "Fetching issue ${ISSUE_NWO}#${ISSUE_NUM}..."
+  ISSUE_BODY_FILE=$(mktemp -t sandbox-issue.XXXXXX)
+  trap 'rm -f "${ISSUE_BODY_FILE}"' EXIT
+  ISSUE_HEADER=$(gh issue view "$ISSUE_NUM" --repo "$ISSUE_NWO" --json title,url --template $'{{.title}}\t{{.url}}') \
+    || die "Failed to fetch issue ${ISSUE_NWO}#${ISSUE_NUM}. Check 'gh auth status' and that the issue exists."
+  ISSUE_TITLE="${ISSUE_HEADER%$'\t'*}"
+  ISSUE_URL="${ISSUE_HEADER##*$'\t'}"
+  gh issue view "$ISSUE_NUM" --repo "$ISSUE_NWO" --json body --jq '.body' > "$ISSUE_BODY_FILE" \
+    || die "Failed to fetch issue body for ${ISSUE_NWO}#${ISSUE_NUM}."
+
+  # --issue implies --copy-claude (curated profile) so the issue-mode snippet
+  # has a CLAUDE.md to land in. Explicit --copy-claude / --copy-claude-host wins.
+  if [[ -z "$COPY_CLAUDE" ]]; then
+    COPY_CLAUDE="yes"
+    COPY_CLAUDE_SOURCE="profile"
+    info "--issue implies --copy-claude (curated profile/.claude)"
+  fi
+fi
 
 # ── Resolve --from ──────────────────────────────────────────────────
 if [[ -n "$FROM" ]]; then
@@ -365,6 +402,18 @@ if [[ "$COPY_CLAUDE" == "yes" ]]; then
         tar -C "${SANDBOX_USER_HOME}/.claude" -xf -
 fi
 
+# Append the issue-mode snippet to the seeded CLAUDE.md when --issue is set.
+if [[ -n "$ISSUE" ]]; then
+  SNIPPET_FILE="$(cd "${SCRIPT_DIR}/../profile/.claude" 2>/dev/null && pwd)/issue-mode-snippet.md"
+  [[ -f "$SNIPPET_FILE" ]] || die "Issue-mode snippet not found at ${SNIPPET_FILE}"
+  info "Appending issue-mode snippet to sandbox CLAUDE.md..."
+  {
+    printf '\n---\n\n'
+    cat "$SNIPPET_FILE"
+  } | vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
+        bash -c "cat >> ${SANDBOX_USER_HOME}/.claude/CLAUDE.md"
+fi
+
 # ── Host SSH key (for user SSH access) ────────────────────────────
 HOST_PUBKEY=""
 for keyfile in ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub ~/.ssh/id_ecdsa.pub; do
@@ -413,6 +462,7 @@ if [[ "$COPY_CLAUDE" == "yes" ]]; then
   set_metadata "$CONTAINER" "copy-claude" "yes"
   set_metadata "$CONTAINER" "copy-claude-source" "$COPY_CLAUDE_SOURCE"
 fi
+[[ -n "$ISSUE" ]] && set_metadata "$CONTAINER" "issue" "${ISSUE_NWO}#${ISSUE_NUM}"
 
 # ── Clone repo ──────────────────────────────────────────────────────
 if [[ -n "$REPO" ]]; then
@@ -438,6 +488,19 @@ fi
 if [[ -z "$REPO" ]]; then
   vm_run incus exec "${CONTAINER}" --user ${SANDBOX_UID} --group ${SANDBOX_GID} -- \
     mkdir -p "${WORKSPACE_DIR}"
+fi
+
+# Seed ISSUE.md at the workspace root (after repo clone or workspace mkdir).
+if [[ -n "$ISSUE" ]]; then
+  info "Writing ISSUE.md to ${WORKSPACE_DIR}..."
+  {
+    printf '# %s\n\n' "$ISSUE_TITLE"
+    printf 'Source: %s\n\n' "$ISSUE_URL"
+    printf -- '---\n\n'
+    cat "$ISSUE_BODY_FILE"
+  } | vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
+        bash -c "cat > ${WORKSPACE_DIR}/ISSUE.md"
+  ok "Seeded issue ${ISSUE_NWO}#${ISSUE_NUM}"
 fi
 
 # ── Done ────────────────────────────────────────────────────────────
