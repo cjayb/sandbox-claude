@@ -237,6 +237,18 @@ if [[ -n "$ISSUE" ]]; then
     info "--issue implies --copy-claude (curated profile/.claude)"
   fi
 
+  # --issue also implies --copy-azure when the host has Azure creds, so an
+  # in-sandbox agent can reach Foundry without a separate flag. Soft so a
+  # non-Foundry issue on a host without 'az login' still works.
+  if [[ -z "$COPY_AZURE" ]]; then
+    if [[ -d "${HOME}/.azure" ]]; then
+      COPY_AZURE="yes"
+      info "--issue implies --copy-azure (host ~/.azure detected)"
+    else
+      warn "--issue would imply --copy-azure but ~/.azure not found; if this issue needs Foundry, run 'az login' on the host and recreate the sandbox"
+    fi
+  fi
+
   # Derive branch from issue body if --branch wasn't passed.
   if [[ -z "$BRANCH" ]]; then
     BRANCH=$( (grep -m1 -E '^Branch:[[:space:]]*\S' "$ISSUE_BODY_FILE" || true) | sed -E 's/^Branch:[[:space:]]*//' | tr -d '[:space:]')
