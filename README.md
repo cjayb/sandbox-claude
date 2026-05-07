@@ -310,6 +310,7 @@ sandbox-start <name> [repo-url] [flags]
 | `--no-repo` | Skip CWD repo auto-detection and create a scratch container | Off |
 | `--copy-claude` | Seed the curated `profile/.claude/` from this repo into the container | Off |
 | `--copy-claude-host` | Seed the host's full `~/.claude/` into the container (legacy escape hatch) | Off |
+| `--issue <spec>` | Seed a GitHub issue into the sandbox (URL, `owner/repo#N`, or bare `#N`/`N`); writes `ISSUE.md` and appends the issue-mode snippet to the seeded `CLAUDE.md` | Off |
 
 **Repo resolution.** If you don't pass `[repo-url]` explicitly, `sandbox-start` falls back to `git remote get-url origin` in the **current working directory** and uses that. So `cd ~/code/myrepo && sandbox-start myrepo --stack python` is equivalent to passing the GitHub URL by hand. To opt out (e.g. you want a true scratch container while sitting inside a git repo), pass `--no-repo`.
 
@@ -373,7 +374,7 @@ sandbox-start my-project --cpu 4 --memory 8GiB --env NEW_VAR=value
 
 **Flags that can be changed on restart** (reconfigurable): `--cpu`, `--memory`, `--env`, `--ssh-key`, `--restrict-domains`, `--domains-file`.
 
-**Flags that require a fresh container** (immutable on restart): `--stack`, `--from`, `--repo`, `--branch`, `--slot`, `--copy-claude`, `--copy-claude-host`. Using these on a stopped container will produce an error; destroy and recreate instead.
+**Flags that require a fresh container** (immutable on restart): `--stack`, `--from`, `--repo`, `--branch`, `--slot`, `--copy-claude`, `--copy-claude-host`, `--issue`. Using these on a stopped container will produce an error; destroy and recreate instead.
 
 #### Seeding Claude Code config (`--copy-claude` vs `--copy-claude-host`)
 
@@ -383,6 +384,26 @@ Containers ship with Claude Code installed but no `CLAUDE.md`, skills, or comman
 - `--copy-claude-host` — copies the entire host `~/.claude/` (CLAUDE.md, skills/, commands/). Escape hatch when you really want everything from your host config; brings along host-only items that may be useless or noisy inside a container.
 
 The container's own `~/.claude/` (auth tokens, etc.) persists across stop/start regardless of which flag was used at create time.
+
+#### Issue-driven sandboxes (`--issue`)
+
+`--issue` seeds a single GitHub issue into the sandbox so the in-container Claude Code agent can pick it up and work it end-to-end. Three forms are accepted:
+
+```bash
+sandbox-start work-42 --issue https://github.com/me/alpha/issues/42
+sandbox-start work-42 --issue me/alpha#42
+sandbox-start work-42 --issue '#42'    # cwd's origin remote resolves owner/repo
+```
+
+What it does at create time:
+
+1. Fetches the issue via `gh issue view --json title,url,body` (host-side, fails fast if `gh` is not authed or the issue doesn't exist).
+2. Writes `ISSUE.md` (title + URL header + body) to `/workspace/project/ISSUE.md` inside the sandbox.
+3. Appends [`profile/.claude/issue-mode-snippet.md`](profile/.claude/issue-mode-snippet.md) to the seeded `CLAUDE.md` so the agent knows its job is to work that issue, run the validation commands, and open a linked PR.
+
+`--issue` implies `--copy-claude` (curated profile) when no Claude flag is set, so the snippet has a `CLAUDE.md` to land in. Pass `--copy-claude-host` explicitly to override.
+
+The issue is captured at create time only — re-fetching after a stop/start is not supported. Recreate the sandbox to refresh.
 
 ---
 
