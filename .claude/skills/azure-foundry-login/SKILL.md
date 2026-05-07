@@ -14,7 +14,7 @@ Two auth paths, in order of preference:
 
 ## What ships with the sandbox
 
-The `python` stack installs the Azure CLI inside the golden image (`stacks/python.sh`):
+The base golden image installs the Azure CLI (`stacks/base.sh`), so every stack has `az` available:
 
 ```bash
 curl -sL https://aka.ms/InstallAzureCLIDeb | bash
