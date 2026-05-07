@@ -42,6 +42,10 @@ sed -i 's/#PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_c
 sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 passwd -l root
 
+# Azure CLI — needed for Foundry/AAD-based Claude Code authentication.
+# Lives in base so --copy-azure works on every stack, not just python.
+curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
 # Docker group for ubuntu user
 usermod -aG docker ubuntu
 
