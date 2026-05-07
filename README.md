@@ -383,6 +383,8 @@ Containers ship with Claude Code installed but no `CLAUDE.md`, skills, or comman
 - `--copy-claude` (recommended) — copies the curated [`profile/.claude/`](profile/.claude/) from this repo. Hand-picked, container-aware: no host-only skills (cmux, etc.), no org-specific automation, no credentials. Edit `profile/.claude/` to evolve what every fresh sandbox sees.
 - `--copy-claude-host` — copies the entire host `~/.claude/` (CLAUDE.md, skills/, commands/). Escape hatch when you really want everything from your host config; brings along host-only items that may be useless or noisy inside a container.
 
+Either flag also seeds a minimal `~/.claude.json` in the container that pre-accepts the theme picker (`hasCompletedOnboarding: true`) and the workspace-trust dialog for `/workspace/project` so the first `claude` launch goes straight to a prompt. The `--dangerously-skip-permissions` confirmation is interactive-only — use `claude -p '<prompt>' --dangerously-skip-permissions` (or `--output-format stream-json`) for non-interactive runs that bypass it silently.
+
 The container's own `~/.claude/` (auth tokens, etc.) persists across stop/start regardless of which flag was used at create time.
 
 #### Issue-driven sandboxes (`--issue`)
