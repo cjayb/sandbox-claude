@@ -236,6 +236,17 @@ if [[ -n "$ISSUE" ]]; then
     COPY_CLAUDE_SOURCE="profile"
     info "--issue implies --copy-claude (curated profile/.claude)"
   fi
+
+  # Derive branch from issue body if --branch wasn't passed.
+  if [[ -z "$BRANCH" ]]; then
+    BRANCH=$( (grep -m1 -E '^Branch:[[:space:]]*\S' "$ISSUE_BODY_FILE" || true) | sed -E 's/^Branch:[[:space:]]*//' | tr -d '[:space:]')
+    if [[ -n "$BRANCH" ]]; then
+      info "Branch from issue: ${BRANCH}"
+    else
+      BRANCH="agent/issue-${ISSUE_NUM}"
+      warn "Issue has no 'Branch:' line; using auto-derived '${BRANCH}'"
+    fi
+  fi
 fi
 
 # ── Resolve --from ──────────────────────────────────────────────────
