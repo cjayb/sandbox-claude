@@ -400,6 +400,25 @@ if [[ "$COPY_CLAUDE" == "yes" ]]; then
       -h -cf - "${CLAUDE_ITEMS[@]}" \
     | vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
         tar -C "${SANDBOX_USER_HOME}/.claude" -xf -
+
+  # Pre-seed ~/.claude.json so the first launch of `claude` in the container
+  # skips the theme picker and the workspace trust dialog. The bypass-permissions
+  # ("YOLO") confirmation is interactive-only and not suppressed here — use
+  # `claude -p` for non-interactive runs.
+  CLAUDE_FIRST_START=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+  vm_run incus exec "${CONTAINER}" --user "${SANDBOX_UID}" --group "${SANDBOX_GID}" -- \
+    bash -c "cat > ${SANDBOX_USER_HOME}/.claude.json" <<EOF
+{
+  "hasCompletedOnboarding": true,
+  "firstStartTime": "${CLAUDE_FIRST_START}",
+  "projects": {
+    "${WORKSPACE_DIR}": {
+      "hasTrustDialogAccepted": true,
+      "projectOnboardingSeenCount": 1
+    }
+  }
+}
+EOF
 fi
 
 # Append the issue-mode snippet to the seeded CLAUDE.md when --issue is set.
