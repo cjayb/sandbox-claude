@@ -218,6 +218,36 @@ parse_repo_nwo() {
   echo "$url" | sed -E 's#.*github\.com[:/]##; s#\.git$##'
 }
 
+# Parse an --issue spec into "<owner>/<repo> <num>".
+# Accepts:
+#   https://github.com/owner/repo/issues/123  (trailing slash and #anchor allowed)
+#   owner/repo#123                            (shorthand)
+#   #123 or 123                               (resolves owner/repo from cwd's origin remote)
+# Prints "<owner>/<repo> <num>" on success; on failure, prints to stderr and returns 1.
+parse_issue_spec() {
+  local spec="$1"
+  local nwo="" num=""
+
+  if [[ "$spec" =~ ^https://github\.com/([^/]+)/([^/]+)/issues/([0-9]+)/?(#.*)?$ ]]; then
+    nwo="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+    num="${BASH_REMATCH[3]}"
+  elif [[ "$spec" =~ ^([^/[:space:]]+)/([^/#[:space:]]+)#([0-9]+)$ ]]; then
+    nwo="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+    num="${BASH_REMATCH[3]}"
+  elif [[ "$spec" =~ ^#?([0-9]+)$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    local origin
+    origin=$(git remote get-url origin 2>/dev/null || true)
+    [[ -n "$origin" ]] || { echo "Bare issue '${spec}' requires a git repo with an origin remote in cwd" >&2; return 1; }
+    nwo=$(parse_repo_nwo "$origin")
+  else
+    echo "Unrecognized issue spec: '${spec}'. Expected URL, owner/repo#N, or #N." >&2
+    return 1
+  fi
+
+  echo "${nwo} ${num}"
+}
+
 deploy_key_create() {
   local name="$1"
   local repo_url="$2"
